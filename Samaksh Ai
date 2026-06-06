@@ -1,0 +1,75 @@
+import streamlit as st
+from openai import OpenAI
+
+# Initialize the OpenAI client (automatically uses OPENAI_API_KEY environment variable)
+client = OpenAI()
+
+st.set_page_config(page_title="Multimodal AI Assistant", page_icon="🤖")
+st.title("🤖 Chat & Image AI Assistant")
+st.write("Ask me questions, or tell me to 'generate an image of...' to create art!")
+
+# Initialize session state for chat history
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# Display previous conversation history
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        if message["type"] == "text":
+            st.markdown(message["content"])
+        elif message["type"] == "image":
+            st.image(message["content"], caption="Generated Image")
+
+# Helper function to detect image generation requests
+def wants_image(prompt: str) -> bool:
+    keywords = ["generate an image", "generate a picture", "draw", "paint", "create an image", "create a picture", "make an image"]
+    return any(keyword in prompt.lower() for keyword in keywords)
+
+# Handle new user input
+if user_input := st.chat_input("Type your message here..."):
+    
+    # 1. Add and display user message
+    st.session_state.messages.append({"role": "user", "type": "text", "content": user_input})
+    with st.chat_message("user"):
+        st.markdown(user_input)
+
+    # 2. Process AI Response
+    with st.chat_message("assistant"):
+        if wants_image(user_input):
+            # Route to DALL-E 3 for image generation
+            with st.spinner("🎨 Creating your masterpiece..."):
+                try:
+                    response = client.images.generate(
+                        model="dall-e-3",
+                        prompt=user_input,
+                        n=1,
+                        size="1024x1024"
+                    )
+                    image_url = response.data[0].url
+                    
+                    # Display and save the image
+                    st.image(image_url, caption="Generated Image")
+                    st.session_state.messages.append({"role": "assistant", "type": "image", "content": image_url})
+                except Exception as e:
+                    st.error(f"Failed to generate image: {e}")
+        else:
+            # Route to GPT-4o for normal text conversation
+            with st.spinner("🤖 Thinking..."):
+                try:
+                    # Format history for the API (extracting text content only for simplicity)
+                    api_messages = [
+                        {"role": m["role"], "content": m["content"]}
+                        for m in st.session_state.messages if m["type"] == "text"
+                    ]
+                    
+                    response = client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=api_messages
+                    )
+                    assistant_text = response.choices[0].message.content
+                    
+                    # Display and save the text response
+                    st.markdown(assistant_text)
+                    st.session_state.messages.append({"role": "assistant", "type": "text", "content": assistant_text})
+                except Exception as e:
+                    st.error(f"Failed to get text response: {e}")
